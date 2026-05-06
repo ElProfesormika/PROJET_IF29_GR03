@@ -206,5 +206,5 @@ J'ai fait :
 ### ✔ Export
 
 * CSV : https://github.com/ElProfesormika/PROJET_IF29_GR03/blob/main/users_aggregated.csv
-* JSON 
+* JSON : https://www.dropbox.com/t/igamCRcvLkc6uKom
 
