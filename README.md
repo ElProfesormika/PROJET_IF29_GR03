@@ -1,210 +1,199 @@
-# 1. Description propre du dataset CSV 
-
-## Dataset utilisateurs – Projet IF29
-
-### Source
-
-* Base MongoDB : `database_local`
-* Collection : `users_aggregated`
-* Extraction issue de **1 161 999 tweets Twitter (tweet WorldCup dataset)**
 
 
+# Data Preparation and User-Level Aggregation Pipeline
 
-## Structure générale
+## Project Context
 
-* **1 ligne = 1 utilisateur Twitter**
-* Données obtenues par **agrégation de comportements observés au niveau tweet**
-* Aucun label (ni supervision, ni classe cible)
+This repository contains the data engineering and data cleaning pipeline developed for the IF29 project *“Comparison of Two Classification Methods for Detecting Atypical X (Twitter) Profiles”*.
+
+The goal of this pipeline is to transform raw Twitter World Cup tweets stored in MongoDB into a **user-level aggregated dataset**, where each row corresponds to one Twitter profile and contains behavioral, social, and content-based features suitable for Machine Learning models.
+
+This step provides the **input data** for both supervised and unsupervised classification approaches.
 
 ---
 
-#  Description détaillée des variables
+## Dataset Description
 
-## 🔹 1. Identité et statut du compte
+### Input Data
 
-### `followers_count`
+* Source: `Tweet_Worldcup` dataset
+* Format: JSON documents
+* Storage: MongoDB collection `tweets`
+* Granularity: one document per tweet
 
-Nombre d’abonnés du compte Twitter
-➡️ Indicateur de popularité / influence
+Each tweet document follows the native Twitter JSON structure and may contain:
 
+* tweet metadata
+* embedded retweeted content (`retweeted_status`)
+* user profile information (`user`)
 
+### Key Assumption
 
-### `friends_count`
-
-Nombre de comptes suivis par l’utilisateur
-➡️ Indicateur d’activité sociale (following)
-
-
-
-### `verified`
-
-Statut du compte (0/1 ou false/true)
-➡️ Indique si le compte est certifié Twitter
-
-
-
-### `statuses_count`
-
-Nombre total de tweets publiés par le compte
-➡️ Mesure de l’activité globale historique
-
-
-
-### `favourites_count`
-
-Nombre total de likes donnés par l’utilisateur
-➡️ Indicateur d’engagement passif
-
-
-
-## 🔹 2. Activité observée dans le dataset
-
-### `nb_tweets_observed`
-
-Nombre de tweets présents dans le dataset pour cet utilisateur
-➡️ Activité mesurée sur la période du dataset (et non totale)
-
-
-
-### `nb_retweets`
-
-Nombre de tweets classés comme retweets
-➡️ Mesure du comportement de diffusion
-
-
-## 🔹 3. Engagement moyen reçu
-
-### `avg_favorite_count`
-
-Nombre moyen de likes reçus par tweet
-➡️ Indicateur d’attractivité des contenus
-
-
-
-### `avg_retweet_count`
-
-Nombre moyen de retweets reçus par tweet
-➡️ Indicateur de viralité
-
-
-
-## 🔹 4. Variables dérivées (feature engineering simple)
-
-### `follower_friend_ratio`
-
-Ratio :
-
-followers_count / friends_count
-
-➡️ Mesure d’influence relative
-
-* élevé → compte suivi massivement
-* faible → compte “follow-back” ou suspect
-
-
-
-### `retweet_ratio`
-
-Ratio :
-
-nb_retweets / nb_tweets_observed
-
-➡️ Mesure du comportement de diffusion
-
-* proche de 1 → compte principalement amplificateur
-* proche de 0 → compte original
+For profile analysis, the pipeline focuses on the **author of the tweet** (`user`) and not on the original author of a retweeted status (`retweeted_status.user`).
 
 ---
 
-# 2. Partie IMPORT (MongoDB) – propre et justifiée
+## Pipeline Overview
 
+The data preparation pipeline is fully implemented using a **MongoDB aggregation pipeline executed via mongosh**.
 
-##  Script d’import des données brutes (MongoDB)
+### Main Steps
 
-```bash id="mongo_import_if29"
-#!/bin/bash
+1. Feature extraction at tweet level
+2. Identification of retweets
+3. Grouping tweets by user ID
+4. Computation of aggregated behavioral indicators
+5. Preservation of static user profile attributes
+6. Output to a new MongoDB collection
+7. Export to CSV and JSON formats
 
-DB_NAME="database_local"
-COLLECTION_NAME="tweets"
-DATA_DIR="/home/el-professor/Téléchargements/IF29/raw"
-MONGO_URI="mongodb://localhost:27017"
+---
 
-# Vérification de mongoimport
-if ! command -v mongoimport &> /dev/null; then
-  echo "mongoimport introuvable"
-  exit 1
-fi
+## MongoDB Aggregation Pipeline
 
-# Vérification du serveur MongoDB
-if ! mongosh --quiet --eval "db.runCommand({ ping: 1 })" &> /dev/null; then
-  echo "MongoDB local non démarré"
-  exit 1
-fi
+### Tweet-Level Feature Engineering
 
-# Récupération des fichiers JSON
-shopt -s nullglob
-files=("$DATA_DIR"/*.json)
+For each tweet, the following features are computed:
 
-if [ ${#files[@]} -eq 0 ]; then
-  echo "Aucun fichier JSON trouvé dans $DATA_DIR"
-  exit 0
-fi
+* `is_retweet_flag`: binary indicator (1 if retweet, 0 otherwise)
+* `tweet_length`: number of characters in the tweet text
+* `hashtags_count`: number of hashtags
+* `urls_count`: number of URLs
+* `mentions_count`: number of user mentions
+* `tweet_date`: tweet creation date converted to ISODate
 
-echo " ${#files[@]} fichiers détectés"
+---
 
-# Import des fichiers dans MongoDB
-for file in "${files[@]}"; do
-  echo "Import de $(basename "$file")..."
-  
-  mongoimport \
-    --uri="$MONGO_URI" \
-    --db="$DB_NAME" \
-    --collection="$COLLECTION_NAME" \
-    --file="$file" \
-    --mode=insert \
-    --numInsertionWorkers=4
-done
+### User-Level Aggregation
 
-echo " Import local terminé avec succès"
+Tweets are grouped by `user.id`. For each user, the pipeline computes:
+
+#### Activity Metrics
+
+* Total number of tweets
+* Number of retweets
+* Retweet ratio
+
+#### Content Metrics
+
+* Average tweet length
+* Average number of hashtags per tweet
+* Average number of URLs per tweet
+* Average number of mentions per tweet
+
+#### Engagement Metrics
+
+* Average number of favorites received
+* Average number of retweets received
+
+#### Temporal Metrics
+
+* First tweet date
+* Last tweet date
+* Number of active days
+* Average tweet frequency (tweets per day)
+
+#### Social Profile Metrics
+
+* Number of followers
+* Number of friends (followings)
+* Followers-to-friends ratio
+* Verified account indicator
+* Default profile image indicator
+* Profile language
+
+Static user profile attributes are preserved using the `$first` operator.
+
+---
+
+## Output Collection
+
+The aggregation pipeline outputs the results into a new MongoDB collection:
+
+```
+users_aggregated
 ```
 
----
-
-# 3. Justification (IMPORTANT NOTE)
-
-## 🔹 Phase d’ingestion des données
-
-> Les données Twitter ont été importées dans MongoDB à l’aide de l’outil `mongoimport`, permettant la gestion efficace de fichiers JSON volumineux et semi-structurés.
-> Cette étape garantit la conservation du format natif des données sociales et facilite leur traitement ultérieur.
+Each document in this collection represents a single Twitter user enriched with aggregated features derived from all their tweets.
 
 ---
 
-#  4. Le TRAVAIL démontre:
+## Exported Files
 
-Rôle :
+The final dataset is exported in two formats:
 
-##  Data Engineer / Data Cleaner
+### JSON Export
 
-J'ai fait :
+```
+users_aggregated.json
+```
 
-### ✔ Ingestion
+* Preserves all numeric and boolean fields
+* Suitable for reuse in MongoDB or further processing
 
-* JSON → MongoDB
+### CSV Export
 
-### ✔ Structuration
+```
+users_aggregated.csv
+```
 
-* tweets → utilisateurs
+* Flat, tabular format
+* Compatible with pandas, scikit-learn, and visualization tools
 
-### ✔ Agrégation
+---
 
-* 1M+ tweets → 643k utilisateurs
+## CSV Column Description
 
-### ✔ Feature engineering léger
+| Column Name               | Description                               |
+| ------------------------- | ----------------------------------------- |
+| `screen_name`             | Twitter username                          |
+| `verified`                | Whether the account is verified           |
+| `followers_count`         | Number of followers                       |
+| `friends_count`           | Number of followed accounts               |
+| `followers_friends_ratio` | followers_count / friends_count           |
+| `nb_tweets`               | Total number of tweets in dataset         |
+| `nb_retweets`             | Number of retweets                        |
+| `retweet_ratio`           | nb_retweets / nb_tweets                   |
+| `avg_tweet_length`        | Average tweet length                      |
+| `avg_hashtags`            | Average number of hashtags per tweet      |
+| `avg_urls`                | Average number of URLs per tweet          |
+| `avg_mentions`            | Average number of user mentions per tweet |
+| `avg_favorites`           | Average number of favorites received      |
+| `avg_retweet_count`       | Average number of retweets received       |
+| `tweet_frequency`         | Average tweets per day                    |
+| `default_profile_image`   | Whether default profile image is used     |
+| `profile_lang`            | Declared profile language                 |
 
-* ratios simples
+---
 
-### ✔ Export
+## Intended Usage
 
-* CSV : https://github.com/ElProfesormika/PROJET_IF29_GR03/blob/main/users_aggregated.csv
-* JSON : https://www.dropbox.com/t/igamCRcvLkc6uKom
+The aggregated dataset is designed to be used as:
+
+* Input for unsupervised learning (clustering, anomaly detection)
+* Input for supervised learning (bot / atypical profile classification)
+* Basis for exploratory data analysis and visualization
+
+All features are numerical or boolean, enabling straightforward normalization and dimensionality reduction.
+
+---
+
+## Reproducibility
+
+The aggregation pipeline is deterministic and can be re-executed at any time on the raw tweet collection to regenerate the dataset.
+
+Dependencies:
+
+* MongoDB
+* mongosh
+* mongoexport (for CSV and JSON export)
+
+---
+
+## Author and Role
+
+**Housseni YABRE – Data Engineer / Data Cleaner**
+
+Responsible for data extraction, cleaning, structuring, and aggregation.
+Delivered the final user-level dataset serving as input for Machine Learning models.
 
