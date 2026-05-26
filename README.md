@@ -197,3 +197,5 @@ Dependencies:
 Responsible for data extraction, cleaning, structuring, and aggregation.
 Delivered the final user-level dataset serving as input for Machine Learning models.
 
+https://www.dropbox.com/t/hobDzZlRdvYX5yju (CSV & JSON are here)
+
