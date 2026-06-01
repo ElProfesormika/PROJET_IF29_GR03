@@ -1,201 +1,235 @@
 
+# Préparation des Données et Agrégation par Utilisateur (MongoDB)
 
-# Data Preparation and User-Level Aggregation Pipeline
+## Contexte du Projet
 
-## Project Context
+Ce dépôt contient le **pipeline de préparation, nettoyage et agrégation des données** développé dans le cadre du projet IF29 :
 
-This repository contains the data engineering and data cleaning pipeline developed for the IF29 project *“Comparison of Two Classification Methods for Detecting Atypical X (Twitter) Profiles”*.
+> **« Comparaison de deux méthodes de classification pour la détection de profils atypiques sur X (Twitter) »**
 
-The goal of this pipeline is to transform raw Twitter World Cup tweets stored in MongoDB into a **user-level aggregated dataset**, where each row corresponds to one Twitter profile and contains behavioral, social, and content-based features suitable for Machine Learning models.
+L’objectif de ce travail est de transformer un **jeu de données brut de tweets** (niveau tweet) en un **jeu de données agrégé au niveau utilisateur**, exploitable directement par des **modèles de Machine Learning** (supervisés et non supervisés).
 
-This step provides the **input data** for both supervised and unsupervised classification approaches.
-
----
-
-## Dataset Description
-
-### Input Data
-
-* Source: `Tweet_Worldcup` dataset
-* Format: JSON documents
-* Storage: MongoDB collection `tweets`
-* Granularity: one document per tweet
-
-Each tweet document follows the native Twitter JSON structure and may contain:
-
-* tweet metadata
-* embedded retweeted content (`retweeted_status`)
-* user profile information (`user`)
-
-### Key Assumption
-
-For profile analysis, the pipeline focuses on the **author of the tweet** (`user`) and not on the original author of a retweeted status (`retweeted_status.user`).
+Cette étape constitue la **fondation du projet**, garantissant la qualité, la cohérence et la robustesse des variables utilisées pour l’analyse comportementale.
 
 ---
 
-## Pipeline Overview
+## Description du Jeu de Données
 
-The data preparation pipeline is fully implemented using a **MongoDB aggregation pipeline executed via mongosh**.
+### Données d’Entrée
 
-### Main Steps
+* **Source** : Dataset *Tweet_Worldcup*
+* **Format** : Documents JSON
+* **Base de données** : MongoDB
+* **Collection** : `tweets`
+* **Granularité** : un document par tweet
 
-1. Feature extraction at tweet level
-2. Identification of retweets
-3. Grouping tweets by user ID
-4. Computation of aggregated behavioral indicators
-5. Preservation of static user profile attributes
-6. Output to a new MongoDB collection
-7. Export to CSV and JSON formats
+Chaque document suit la structure JSON native de l’API Twitter/X et contient notamment :
 
----
+* les métadonnées du tweet,
+* les informations sur l’auteur (`user`),
+* éventuellement le contenu d’un tweet retweeté (`retweeted_status`).
 
-## MongoDB Aggregation Pipeline
+### Hypothèse Fondamentale
 
-### Tweet-Level Feature Engineering
-
-For each tweet, the following features are computed:
-
-* `is_retweet_flag`: binary indicator (1 if retweet, 0 otherwise)
-* `tweet_length`: number of characters in the tweet text
-* `hashtags_count`: number of hashtags
-* `urls_count`: number of URLs
-* `mentions_count`: number of user mentions
-* `tweet_date`: tweet creation date converted to ISODate
+L’analyse porte **uniquement sur l’auteur du tweet observé** (`user`)
+👉 Les informations de `retweeted_status.user` ne sont **pas utilisées**, afin de ne pas biaiser le profil comportemental.
 
 ---
 
-### User-Level Aggregation
+## Objectif du Pipeline
 
-Tweets are grouped by `user.id`. For each user, the pipeline computes:
+Le pipeline a pour but de :
 
-#### Activity Metrics
+* nettoyer les données brutes,
+* enrichir chaque tweet avec des variables calculées,
+* agréger les tweets par **identifiant utilisateur**,
+* produire un **jeu de données utilisateur robuste et homogène**.
 
-* Total number of tweets
-* Number of retweets
-* Retweet ratio
-
-#### Content Metrics
-
-* Average tweet length
-* Average number of hashtags per tweet
-* Average number of URLs per tweet
-* Average number of mentions per tweet
-
-#### Engagement Metrics
-
-* Average number of favorites received
-* Average number of retweets received
-
-#### Temporal Metrics
-
-* First tweet date
-* Last tweet date
-* Number of active days
-* Average tweet frequency (tweets per day)
-
-#### Social Profile Metrics
-
-* Number of followers
-* Number of friends (followings)
-* Followers-to-friends ratio
-* Verified account indicator
-* Default profile image indicator
-* Profile language
-
-Static user profile attributes are preserved using the `$first` operator.
+Chaque ligne du dataset final correspond à **un profil Twitter unique**.
 
 ---
 
-## Output Collection
+## Vue d’Ensemble du Pipeline
 
-The aggregation pipeline outputs the results into a new MongoDB collection:
+Le pipeline est implémenté sous forme d’une **agrégation MongoDB**, exécutable via `mongosh`.
 
-```
+### Étapes Principales
+
+1. Enrichissement des tweets (features calculées)
+2. Conversion et validation des dates
+3. Agrégation des tweets par utilisateur
+4. Calcul des métriques comportementales
+5. Calcul des métriques temporelles
+6. Nettoyage et normalisation des variables
+7. Écriture du résultat dans une nouvelle collection
+
+---
+
+## Enrichissement au Niveau Tweet
+
+Pour chaque tweet, les variables suivantes sont calculées :
+
+### Indicateurs d’Activité
+
+* `is_retweet_flag` : indicateur binaire de retweet (1 = retweet)
+* `tweet_length` : longueur du texte du tweet
+
+### Indicateurs de Contenu
+
+* `hashtags_count` : nombre de hashtags
+* `urls_count` : nombre d’URLs
+* `mentions_count` : nombre de mentions utilisateur
+
+### Indicateur Temporel
+
+* `tweet_date` : date du tweet convertie au format `ISODate`
+
+Ces transformations garantissent des **types cohérents** et évitent les erreurs lors de l’agrégation.
+
+---
+
+## Agrégation au Niveau Utilisateur
+
+Les tweets sont groupés par `user.id`.
+Pour chaque utilisateur, les catégories de variables suivantes sont produites :
+
+---
+
+## Métriques Sociales (Profil)
+
+* `followers_count` : nombre d’abonnés
+* `friends_count` : nombre d’abonnements
+* `followers_friends_ratio` : ratio abonnés / abonnements
+* `verified` : compte certifié ou non
+* `default_profile_image` : image de profil par défaut
+* `profile_lang` : langue déclarée du profil
+
+Ces variables permettent de détecter des **profils anormaux ou artificiels**.
+
+---
+
+## Métriques d’Activité
+
+* `nb_tweets` : nombre total de tweets observés
+* `nb_retweets` : nombre de retweets
+* `retweet_ratio` : proportion de retweets
+
+Ces indicateurs caractérisent le **niveau d’activité** et la **nature du comportement**.
+
+---
+
+## Métriques de Contenu
+
+* `avg_tweet_length` : longueur moyenne des tweets
+* `avg_hashtags` : hashtags moyens par tweet
+* `avg_urls` : URLs moyennes par tweet
+* `avg_mentions` : mentions moyennes par tweet
+
+Ils décrivent la **richesse et la structure du contenu publié**.
+
+---
+
+## Métriques d’Engagement
+
+* `avg_favorites` : moyenne des likes reçus
+* `avg_retweet_count` : moyenne des retweets reçus
+
+⚠️ Ces variables peuvent être nulles ou nulles sur certains datasets (ex. collecte partielle), comme notre cas , mais sont conservées pour assurer la **compatibilité avec des modèles génériques**.
+
+---
+
+## Métriques Temporelles (Essentielles)
+
+Les dates sont **indispensables** pour caractériser le comportement d’un profil.
+
+À partir de `tweet_date`, le pipeline calcule :
+
+* `first_tweet_date` : première activité observée
+* `last_tweet_date` : dernière activité observée
+* `active_days` : nombre de jours distincts d’activité
+* `tweet_frequency` : moyenne de tweets par jour
+
+### Importance
+
+Sans métriques temporelles :
+
+* il est impossible de distinguer un humain d’un bot,
+* la détection d’activité anormale devient irréalisable,
+* toute analyse comportementale est biaisée.
+
+---
+
+## Collection de Sortie
+
+Le pipeline écrit le résultat dans la collection :
+
+```text
 users_aggregated
 ```
 
-Each document in this collection represents a single Twitter user enriched with aggregated features derived from all their tweets.
+Chaque document représente **un utilisateur Twitter enrichi**.
 
 ---
 
-## Exported Files
+## Export des Données
 
-The final dataset is exported in two formats:
+Les données finales sont exportées sous deux formats :
 
-### JSON Export
+### JSON
 
-```
-users_aggregated.json
-```
+* Fichier : `users_aggregated.json`
+* Conservation complète des types
+* Recommandé pour archivage et réutilisation
 
-* Preserves all numeric and boolean fields
-* Suitable for reuse in MongoDB or further processing
+### CSV
 
-### CSV Export
+* Fichier : `users_aggregated.csv`
+* Format tabulaire
+* Directement exploitable pour :
 
-```
-users_aggregated.csv
-```
+  * pandas
+  * scikit-learn ...
 
-* Flat, tabular format
-* Compatible with pandas, scikit-learn, and visualization tools
 
 ---
 
-## CSV Column Description
+## Utilisation Prévue
 
-| Column Name               | Description                               |
-| ------------------------- | ----------------------------------------- |
-| `screen_name`             | Twitter username                          |
-| `verified`                | Whether the account is verified           |
-| `followers_count`         | Number of followers                       |
-| `friends_count`           | Number of followed accounts               |
-| `followers_friends_ratio` | followers_count / friends_count           |
-| `nb_tweets`               | Total number of tweets in dataset         |
-| `nb_retweets`             | Number of retweets                        |
-| `retweet_ratio`           | nb_retweets / nb_tweets                   |
-| `avg_tweet_length`        | Average tweet length                      |
-| `avg_hashtags`            | Average number of hashtags per tweet      |
-| `avg_urls`                | Average number of URLs per tweet          |
-| `avg_mentions`            | Average number of user mentions per tweet |
-| `avg_favorites`           | Average number of favorites received      |
-| `avg_retweet_count`       | Average number of retweets received       |
-| `tweet_frequency`         | Average tweets per day                    |
-| `default_profile_image`   | Whether default profile image is used     |
-| `profile_lang`            | Declared profile language                 |
+Le dataset final est conçu pour :
+
+* la détection de profils atypiques,
+* l’apprentissage non supervisé (clustering),
+* l’apprentissage supervisé (classification bot / humain),
+* l’analyse exploratoire des comportements.
+
+Toutes les variables sont **numériques ou booléennes**, facilitant la normalisation et l’entraînement des modèles.
 
 ---
 
-## Intended Usage
+## Reproductibilité
 
-The aggregated dataset is designed to be used as:
+Le pipeline est **déterministe** :
 
-* Input for unsupervised learning (clustering, anomaly detection)
-* Input for supervised learning (bot / atypical profile classification)
-* Basis for exploratory data analysis and visualization
+* une exécution sur les mêmes données produit exactement le même résultat.
 
-All features are numerical or boolean, enabling straightforward normalization and dimensionality reduction.
-
----
-
-## Reproducibility
-
-The aggregation pipeline is deterministic and can be re-executed at any time on the raw tweet collection to regenerate the dataset.
-
-Dependencies:
+Dépendances :
 
 * MongoDB
 * mongosh
-* mongoexport (for CSV and JSON export)
+* mongoexport
 
 ---
 
-## Author and Role
+## Auteur et Rôle
 
-**Housseni YABRE – Data Engineer / Data Cleaner**
+**Housseni – Data Engineer / Data Cleaner**
 
-Responsible for data extraction, cleaning, structuring, and aggregation.
-Delivered the final user-level dataset serving as input for Machine Learning models.
+Responsable de :
 
-https://www.dropbox.com/t/hobDzZlRdvYX5yju (CSV & JSON are here)
+* l’extraction des données,
+* le nettoyage,
+* la structuration,
+* l’agrégation finale des profils utilisateurs.
+
+Ce travail fournit le **jeu de données d’entrée unique** pour l’ensemble des modèles de Machine Learning du projet.
 
